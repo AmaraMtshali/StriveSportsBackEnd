@@ -13,6 +13,7 @@ import { ToastContainer, toast,Bounce } from 'react-toastify'; //toastify.
 import getEvents from './getEvents.jsx';
 import deleteBooking from './deleteBooking.jsx';
 
+
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -23,7 +24,7 @@ import { useRef } from 'react';
 import getReports from './getReports.jsx';
 import TimePicker from 'react-time-picker'
 
-
+/*comment*/
 let globalVar;
 export default function AdminDashboard() {
 
