@@ -2,6 +2,7 @@
 
 const express = require('express')
 const mongoose = require('mongoose')
+const puppeteer = require('puppeteer') //the thing for downloading snapshots of dashboards
 const cors = require('cors')
 require('dotenv').config({path:'.env'});
 const UserModel = require('./models/sportsbooking')
@@ -11,6 +12,13 @@ const {Resend} = require('resend');
 const axios = require('axios'); // Required for Clerk API calls
 const nodemailer = require('nodemailer'); //for nodemailer
 const { clerkClient } = require('@clerk/clerk-sdk-node');  // correct import
+
+const fs = require('fs');
+const path = require('path');
+const {jsPDF} = require('jspdf');
+require('jspdf-autotable'); //for table formatting.
+
+
 
 const {createClerkClient} = require('@clerk/clerk-sdk-node');
 const clerk = createClerkClient({
@@ -23,6 +31,8 @@ const app = express()
 //app.use(cors())
 app.use(express.json())
 app.use(cors());
+
+app.use('/csv-data', express.static(path.join(__dirname, 'data'))); 
 
 const ATLAS_URL=process.env.ATLAS_URL;
 const VITE_CLERK_PUBLISHABLE_KEY=process.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -344,6 +354,133 @@ app.post('/emails', async (req, res) => {
         res.status(500).send({ errorMessage: error.message });
     }
 })
+
+{/* this the dashboard implementation using the puppeteer, */}
+// app.get('/download-dashboard/:type', async (req, res) => {
+//   const { type } = req.params;
+
+//   const dashboardURLs = {
+//     maintenance: 'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/dashboards?id=680810f8-19dd-4115-84d0-1a597dcd4c43&theme=light&autoRefresh=true&maxDataAge=3600&showTitleAndDesc=false&scalingWidth=scale&scalingHeight=scale',
+//     booking: 'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/dashboards?id=d7683d19-69a9-415c-bb7b-3b7f97a53ac1&theme=light&autoRefresh=true&maxDataAge=3600&showTitleAndDesc=false&scalingWidth=scale&scalingHeight=scale',
+//   };
+
+//   const url = dashboardURLs[type];
+//   if (!url) {
+//     return res.status(400).send('Invalid dashboard type');
+//   }
+
+//   try {
+//     const browser = await puppeteer.launch({
+//       headless: 'new',
+//       args: ['--no-sandbox', '--disable-setuid-sandbox'],
+//     });
+
+//     const page = await browser.newPage();
+//     await page.setViewport({ width: 1280, height: 1000 });
+//     await page.goto(url, { waitUntil: 'networkidle2', timeout: 0 });
+
+//     await page.waitForTimeout(8000); //allowing ample time for mongodb to load charts.
+
+//     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+
+//     await browser.close();
+
+//     res.set({
+//       'Content-Type': 'application/pdf',
+//       'Content-Disposition': `attachment; filename=${type}_dashboard.pdf`,
+//       'Content-Length': pdfBuffer.length,
+//     });
+
+//     res.send(pdfBuffer);
+//   } catch (error) {
+//     console.error('PDF generation error:', error);
+//     res.status(500).send('Failed to generate PDF');
+//   }
+// });
+
+{/* downloading them by charts instead */}
+app.get('/download-dashboard/:type', async (req, res) => {
+  const { type } = req.params;
+
+  // Replace these with actual public chart links
+  const chartURLs = {
+    maintenance: [
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=ba7f3462-f008-442c-8e6a-cdf6b2531805&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=1da762c4-ec56-4de2-8dcf-af22567f0870&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=592e210b-d260-4d1d-b0d1-75964db0bbdd&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=90847db4-4b68-4e28-bc38-285561599a84&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=ebe1d823-5f12-470f-9031-da7e3fb5c0ba&maxDataAge=3600&theme=light&autoRefresh=true'
+    ],
+    booking: [
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=8d9fbf42-5692-4520-b8e7-010d1877448f&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=99f8ecd5-c199-4d20-ab62-311eafb409fb&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=8fbc4b53-ec41-49d5-8510-7b018452f58b&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=b411da1b-f661-4f64-9653-8ff705130d11&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=216e7bdb-9e84-4c10-be8a-ad66c6577132&maxDataAge=3600&theme=light&autoRefresh=true',
+      'https://charts.mongodb.com/charts-project-0-hqkmgki/embed/charts?id=1b11d566-b4a6-4bf0-b0a2-296adc467b84&maxDataAge=3600&theme=light&autoRefresh=true'
+    ]
+  };
+
+  const urls = chartURLs[type];
+  if (!urls) return res.status(400).send('Invalid dashboard type');
+
+  try {
+    const browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const pdf = new (require('jspdf'))();
+    let isFirstPage = true;
+
+    for (const url of urls) {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1280, height: 720 });
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 0 });
+      await page.waitForTimeout(6000); // wait for chart to render
+
+      const chartBuffer = await page.screenshot({ fullPage: true });
+      const imgBase64 = chartBuffer.toString('base64');
+
+      if (!isFirstPage) pdf.addPage();
+      pdf.addImage(imgBase64, 'PNG', 10, 20, 180, 100);
+      isFirstPage = false;
+
+      await page.close();
+    }
+
+    await browser.close();
+
+    const pdfOutput = pdf.output('arraybuffer');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=${type}_charts.pdf`,
+      'Content-Length': pdfOutput.byteLength
+    });
+
+    res.send(Buffer.from(pdfOutput));
+  } catch (err) {
+    console.error('Error generating chart PDF:', err);
+    res.status(500).send('Failed to generate PDF');
+  }
+});
+
+//csv file downloading and formating api
+app.get('/download-csv/:type', (req, res) => {
+  const { type } = req.params;
+
+  const filePaths = {
+    maintenance: path.join(__dirname, 'data', 'maintenance.csv'),
+    booking: path.join(__dirname, 'data', 'booking.csv')
+  };
+
+  const filePath = filePaths[type];
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).send('CSV file not found for this dashboard');
+  }
+
+  res.download(filePath, `${type}_dashboard_data.csv`);
+});
 
 
 const PORT = process.env.PORT || 3000;
